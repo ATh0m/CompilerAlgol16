@@ -152,27 +152,27 @@ arithmetic_expression_(AExpression) -->
     summand_(Summand), arithmetic_expression_(Summand, AExpression).
 
 arithmetic_expression_(Acc, AExpression) -->
-    additive_operator_(AOperator),  !, summand_(Summand), { Acc1 =.. [AOperator, Acc, Summand] }, arithmetic_expression_(Acc1, AExpression) |
+    additive_operator_(AOperator),  !, summand_(Summand), { Acc1 = (AOperator, Acc, Summand) }, arithmetic_expression_(Acc1, AExpression) |
     [],                             !, { Acc = AExpression }.
 
 additive_operator_(Operator) -->
-    [tokPlus],      !, { Operator = plus } |
-    [tokMinus],     !, { Operator = minus }.
+    [tokPlus],      !, { Operator = plus    } |
+    [tokMinus],     !, { Operator = minus   }.
 
 summand_(SExpression) -->
     factor_(Factor), summand_(Factor, SExpression).
 
 summand_(Acc, SExpression) -->
-    multiplicative_operator_(MOperator),    !, factor_(Factor), { Acc1 =.. [MOperator, Acc, Factor] }, summand_(Acc1, SExpression) |
+    multiplicative_operator_(MOperator),    !, factor_(Factor), { Acc1 = (MOperator, Acc, Factor) }, summand_(Acc1, SExpression) |
     [],                                     !, { Acc = SExpression }.
 
 multiplicative_operator_(Operator) -->
     [tokTimes],     !, { Operator = times   } |
-    [tokDiv],       !, { Operator = div_    } |
-    [tokMod],       !, { Operator = mod_    }.
+    [tokDiv],       !, { Operator = div     } |
+    [tokMod],       !, { Operator = mod     }.
 
 factor_(FExpression) -->
-    [tokMinus],     !, simple_expression_(SExpression), { FExpression =.. [minus, SExpression] } |
+    [tokMinus],     !, simple_expression_(SExpression), { FExpression = (minus, SExpression) } |
                     !, simple_expression_(SExpression), { FExpression = SExpression }.
 
 simple_expression_(SExpression) -->
@@ -188,23 +188,23 @@ bool_expression_(Bool) -->
     conjunction_(Conjunction), bool_expression_(Conjunction, Bool).
 
 bool_expression_(Acc, Bool) -->
-    [tokOr],    !, conjunction_(Conjunction), { Acc1 =.. [or, Acc, Conjunction] }, bool_expression_(Acc1, Bool) |
+    [tokOr],    !, conjunction_(Conjunction), { Acc1 = (or, Acc, Conjunction) }, bool_expression_(Acc1, Bool) |
     [],         !, { Acc = Bool }.
 
 conjunction_(Conjunction) -->
     condition_(Condition), conjunction_(Condition, Conjunction).
 
 conjunction_(Acc, Conjunction) -->
-    [tokAnd],   !, condition_(Condition), { Acc1 =.. [and, Acc, Condition] }, conjunction_(Acc1, Conjunction) |
+    [tokAnd],   !, condition_(Condition), { Acc1 = (and, Acc, Condition) }, conjunction_(Acc1, Conjunction) |
     [],         !, { Acc = Conjunction }.
 
 condition_(Condition) -->
-    [tokNot],   !, relative_expression_(RExpression), { Condition =.. [not, RExpression] } |
+    [tokNot],   !, relative_expression_(RExpression), { Condition = (not, RExpression) } |
                 !, relative_expression_(RExpression), { Condition = RExpression }.
 
 relative_expression_(RExpression) -->
     [tokLParen], !, bool_expression_(RExpression), [tokRParen] |
-    arithmetic_expression_(AExpressionL), relative_operator_(ROperator), arithmetic_expression_(AExpressionR), { RExpression =.. [ROperator, AExpressionL, AExpressionR] }.
+    arithmetic_expression_(AExpressionL), relative_operator_(ROperator), arithmetic_expression_(AExpressionR), { RExpression = (ROperator, AExpressionL, AExpressionR) }.
 
 relative_operator_(Operator) -->
     [tokEq],    !, { Operator = eq  } |
@@ -217,12 +217,78 @@ relative_operator_(Operator) -->
 
 /* ========================== */
 
+compile_program(Absynt, CompiledProgram) :-
+    Absynt = CompiledProgram.
+
+compile_complex_instruction(Variables, realise(Instruction, RCInstructions), CompiledCInstruction) :-
+    compile_instruction(Variables, Instruction, CompiledInstruction),
+    compile_complex_instruction(Variables, RCInstructions, CompiledRCInstructions),
+    append(CompiledInstruction, CompiledRCInstructions, CompiledCInstruction).
+compile_complex_instruction(Variables, realise(Instruction), CompiledCInstruction) :-
+    compile_instruction(Variables, Instruction, CompiledCInstruction).
+
+compile_instruction(Variables, read_(variable(VName, VAdress)), CompiledInstruction) :-
+    !,
+    member((VName, VAdress), Variables),
+    CompiledInstruction = [const(VAdress), swapa, syscall(1), store].
+
+compile_instruction(Variables, write_(AExpression), CompiledInstruction) :-
+    !,
+    compile_arithmetic_expression(Variables, AExpression, CompiledAExpression),
+    append(CompiledAExpression, [swapd, syscall(2)], CompiledInstruction).
+
+compile_arithmetic_expression(Variables, AExpression, CompiledAExpression) :-
+    compile_arithmetic_expression(65535, Variables, AExpression, CompiledAExpression).
+
+compile_arithmetic_expression(_, Variables, variable(VName, VAdress), CompiledAExpression) :-
+    !,
+    member((VName, VAdress), Variables),
+    CompiledAExpression = [const(VAdress), swapa, load].
+
+compile_arithmetic_expression(_, _, constant(Integer), CompiledAExpression) :-
+    !,
+    CompiledAExpression = [const(Integer)].
+
+compile_arithmetic_expression(SPointer, Variables, (minus, AExpression), CompiledAExpression) :-
+    compile_arithmetic_expression(SPointer, Variables, AExpression, CAExpression),
+    append(CAExpression, [swapd, const(0), sub], CompiledAExpression).
+
+compile_arithmetic_expression(SPointer, Variables, (Operation, AExpressionL, AExpressionR), CompiledAExpression) :-
+    member((Operation, Command),    [
+                                        (plus,  add),
+                                        (minus, sub),
+                                        (times, mul),
+                                        (div,   div)
+                                    ]),
+    !,
+    compile_arithmetic_expression(SPointer, Variables, AExpressionL, CompiledAExpressionL),
+    SPointer2 is SPointer - 1,
+    compile_arithmetic_expression(SPointer2, Variables, AExpressionR, CompiledAExpressionR),
+    append([CompiledAExpressionL, [swapd, const(SPointer), swapa, swapd, store], CompiledAExpressionR, [swapd, const(SPointer), swapa, load, Command]], CompiledAExpression).
+
+compile_arithmetic_expression(SPointer, Variables, (mod, AExpressionL, AExpressionR), CompiledAExpression) :-
+    !,
+    compile_arithmetic_expression(SPointer, Variables, AExpressionL, CompiledAExpressionL),
+    SPointer2 is SPointer - 1,
+    compile_arithmetic_expression(SPointer2, Variables, AExpressionR, CompiledAExpressionR)
+    append([CompiledAExpressionL, [swapd, const(SPointer), swapa, swapd, store], CompiledAExpressionR, [swapd, const(SPointer), swapa, load, div, swapd, const(-16), shift]], CompiledAExpression).
+
+
+
+/* ========================== */
+
+macro_assembler(MacroAssembler) -->
+    [const(Constant)].
+
+assembler(Assembler).
 
 /* ========================== */
 
 algol16(Source, SextiumBin) :-
     phrase(lexer(TokList), Source),
-    phrase(program_(SextiumBin), TokList).
+    phrase(program_(Absynt), TokList),
+    compile_program(Absynt, CompiledProgram),
+    SextiumBin = CompiledProgram.
 
 /* ========================== */
 
