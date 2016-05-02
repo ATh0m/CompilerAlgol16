@@ -271,9 +271,32 @@ compile_arithmetic_expression(SPointer, Variables, (Operation, AExpressionL, AEx
 /* ========================== */
 
 macro_assembler(MacroAssembler) -->
-    [const(Constant)].
+    [const(Constant)],  !, { append([const, Constant], RMacroAssembler, MacroAssembler) }, macro_assembler(RMacroAssembler)         |
+    [syscall(Code)],    !, { append([const, Code, syscall], RMacroAssembler, MacroAssembler) }, macro_assembler(RMacroAssembler)    |
+    [Command],          !, { append([Command], RMacroAssembler, MacroAssembler) }, macro_assembler(RMacroAssembler)                 |
+    [],                 !, { MacroAssembler = [const, 0, syscall] }.
 
-assembler(Assembler).
+assembler(Assembler) -->
+    [Command], !, {(
+                    member((Command, Symbol),   [
+                                                (syscall,   "SYSCALL NOP NOP NOP "   ),
+                                                (load,      "LOAD NOP NOP NOP "      ),
+                                                (store,     "STORE NOP NOP NOP "     ),
+                                                (swapa,     "SWAPA NOP NOP NOP "     ),
+                                                (swapd,     "SWAPD NOP NOP NOP "     ),
+                                                (branchz,   "BRANCHZ NOP NOP NOP "   ),
+                                                (branchn,   "BRANCHN NOP NOP NOP "   ),
+                                                (jump,      "JUMP NOP NOP NOP "      ),
+                                                (const,     "CONST NOP NOP NOP "     ),
+                                                (add,       "ADD NOP NOP NOP "       ),
+                                                (sub,       "SUB NOP NOP NOP "       ),
+                                                (mul,       "MUL NOP NOP NOP "       ),
+                                                (div,       "DIV NOP NOP NOP "       )
+                                            ]), !;
+                    swritef(Symbol, "[%w] ", [Command])
+                  )},
+    assembler(RAssembler), { string_concat(Symbol, RAssembler, Assembler) } |
+    [], { Assembler = "" }.
 
 /* ========================== */
 
@@ -288,3 +311,13 @@ algol16(Source, SextiumBin) :-
 algol16_file(File, SextiumBin) :-
     read_file_to_codes(File, Source, []),
     algol16(Source, SextiumBin).
+
+/* ========================== */
+
+test(String, Assembler) :-
+    string_to_list(String, L),
+    phrase(lexer(T), L),
+    phrase(instruction_(I), T),
+    compile_instruction([], I, PMA),
+    phrase(macro_assembler(MA), PMA),
+    phrase(assembler(Assembler), MA).
