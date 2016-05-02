@@ -293,7 +293,7 @@ assembler(Assembler) -->
                                                 (mul,       "MUL NOP NOP NOP "       ),
                                                 (div,       "DIV NOP NOP NOP "       )
                                             ]), !;
-                    swritef(Symbol, "[%w] ", [Command])
+                    format(atom(Atom), '~`0t~16r~4| ', [Command]), atom_string(Atom, Symbol)
                   )},
     assembler(RAssembler), { string_concat(Symbol, RAssembler, Assembler) } |
     [], { Assembler = "" }.
