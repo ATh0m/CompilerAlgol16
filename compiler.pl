@@ -254,25 +254,18 @@ compile_arithmetic_expression(SPointer, Variables, (minus, AExpression), Compile
     append(CAExpression, [swapd, const(0), sub], CompiledAExpression).
 
 compile_arithmetic_expression(SPointer, Variables, (Operation, AExpressionL, AExpressionR), CompiledAExpression) :-
-    member((Operation, Command),    [
-                                        (plus,  add),
-                                        (minus, sub),
-                                        (times, mul),
-                                        (div,   div)
+    member((Operation, Commands),    [
+                                        (plus,  [add]),
+                                        (minus, [sub]),
+                                        (times, [mul]),
+                                        (div,   [div]),
+                                        (mod,   [div, swapd, const(-16), shift])
                                     ]),
     !,
     compile_arithmetic_expression(SPointer, Variables, AExpressionL, CompiledAExpressionL),
     SPointer2 is SPointer - 1,
     compile_arithmetic_expression(SPointer2, Variables, AExpressionR, CompiledAExpressionR),
-    append([CompiledAExpressionL, [swapd, const(SPointer), swapa, swapd, store], CompiledAExpressionR, [swapd, const(SPointer), swapa, load, Command]], CompiledAExpression).
-
-compile_arithmetic_expression(SPointer, Variables, (mod, AExpressionL, AExpressionR), CompiledAExpression) :-
-    !,
-    compile_arithmetic_expression(SPointer, Variables, AExpressionL, CompiledAExpressionL),
-    SPointer2 is SPointer - 1,
-    compile_arithmetic_expression(SPointer2, Variables, AExpressionR, CompiledAExpressionR)
-    append([CompiledAExpressionL, [swapd, const(SPointer), swapa, swapd, store], CompiledAExpressionR, [swapd, const(SPointer), swapa, load, div, swapd, const(-16), shift]], CompiledAExpression).
-
+    append([CompiledAExpressionL, [swapd, const(SPointer), swapa, swapd, store], CompiledAExpressionR, [swapd, const(SPointer), swapa, load], Commands], CompiledAExpression).
 
 
 /* ========================== */
