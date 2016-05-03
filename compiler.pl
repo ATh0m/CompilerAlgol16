@@ -110,10 +110,10 @@ program_(Ast) -->
     [tokProgram], [tokIdentifier(PName)], block_(Block), { Ast = program(PName, Block) }.
 
 block_(Block) -->
-    declarations_(Declarations), [tokBegin], complex_instruction_(CInstruction), [tokEnd], { Block = block_(Declarations, CInstruction) }.
+    declarations_(Declarations), [tokBegin], complex_instruction_(CInstruction), [tokEnd], { Block = block(Declarations, CInstruction) }.
 
 declarations_(Declarations) -->
-    declaration_(Declaration),      !, { append(Declaration, RDeclarations, Declarations) }, declarations_(RDeclarations) |
+    declaration_(Declaration),      !, { append(Declaration, RDeclarations, Declarations) }, declarations(RDeclarations) |
     [],                             !, { Declarations = [] }.
 
 declaration_(Declaration) -->
@@ -128,7 +128,7 @@ variables_(Variables) -->
                                         !, { Variables = [Variable] }
                          ).
 
-variable_(variable(VName, _)) -->
+variable_(variable(VName)) -->
     [tokIdentifier(VName)].
 
 complex_instruction_(CInstruction) -->
@@ -217,55 +217,75 @@ relative_operator_(Operator) -->
 
 /* ========================== */
 
-compile_program(Absynt, CompiledProgram) :-
-    Absynt = CompiledProgram.
+compile_program(program(_, Block), CompiledProgram) :-
+    compile_block(Block, CompiledProgram).
 
-compile_complex_instruction(Variables, realise(Instruction, RCInstructions), CompiledCInstruction) :-
-    compile_instruction(Variables, Instruction, CompiledInstruction),
-    compile_complex_instruction(Variables, RCInstructions, CompiledRCInstructions),
+compile_block(block(Declarations, CInstruction), CompiledBlock) :-
+    compile_declarations(Declarations, Environment),
+    compile_complex_instruction(Environment, CInstruction, CompiledBlock).
+
+compile_declarations([variable(VName) | Declarations], (Variables, SPointer)) :-
+    !,
+    compile_declarations(Declarations, (RVariables, RSPointer)),
+    Variables = [(VName, RSPointer) | RVariables],
+    SPointer is RSPointer - 1.
+
+compile_declarations([], ([], 65535)).
+
+
+compile_complex_instruction(Environment, realise(Instruction, RCInstructions), CompiledCInstruction) :-
+    !,
+    compile_instruction(Environment, Instruction, CompiledInstruction),
+    compile_complex_instruction(Environment, RCInstructions, CompiledRCInstructions),
     append(CompiledInstruction, CompiledRCInstructions, CompiledCInstruction).
-compile_complex_instruction(Variables, realise(Instruction), CompiledCInstruction) :-
-    compile_instruction(Variables, Instruction, CompiledCInstruction).
+compile_complex_instruction(Environment, realise(Instruction), CompiledCInstruction) :-
+    compile_instruction(Environment, Instruction, CompiledCInstruction).
 
-compile_instruction(Variables, read_(variable(VName, VAdress)), CompiledInstruction) :-
+compile_instruction((Variables, _), read_(variable(VName)), CompiledInstruction) :-
     !,
     member((VName, VAdress), Variables),
     CompiledInstruction = [const(VAdress), swapa, syscall(1), store].
 
-compile_instruction(Variables, write_(AExpression), CompiledInstruction) :-
+compile_instruction(Environment, write_(AExpression), CompiledInstruction) :-
     !,
-    compile_arithmetic_expression(Variables, AExpression, CompiledAExpression),
+    compile_arithmetic_expression(Environment, AExpression, CompiledAExpression),
     append(CompiledAExpression, [swapd, syscall(2)], CompiledInstruction).
 
-compile_arithmetic_expression(Variables, AExpression, CompiledAExpression) :-
-    compile_arithmetic_expression(65535, Variables, AExpression, CompiledAExpression).
+compile_instruction((Variables, SPointer), assign(variable(VName), AExpression), CompiledInstruction) :-
+    !,
+    compile_arithmetic_expression((Variables, SPointer), AExpression, CompiledAExpression),
+    member((VName, VAdress), Variables),
+    append(CompiledAExpression, [swapd, const, VAdress, swapa, swapd, store], CompiledInstruction).
 
-compile_arithmetic_expression(_, Variables, variable(VName, VAdress), CompiledAExpression) :-
+compile_arithmetic_expression((Variables, _), variable(VName), CompiledAExpression) :-
     !,
     member((VName, VAdress), Variables),
     CompiledAExpression = [const(VAdress), swapa, load].
 
-compile_arithmetic_expression(_, _, constant(Integer), CompiledAExpression) :-
+compile_arithmetic_expression(_, constant(Integer), CompiledAExpression) :-
     !,
     CompiledAExpression = [const(Integer)].
 
-compile_arithmetic_expression(SPointer, Variables, (minus, AExpression), CompiledAExpression) :-
-    compile_arithmetic_expression(SPointer, Variables, AExpression, CAExpression),
-    append(CAExpression, [swapd, const(0), sub], CompiledAExpression).
-
-compile_arithmetic_expression(SPointer, Variables, (Operation, AExpressionL, AExpressionR), CompiledAExpression) :-
+compile_arithmetic_expression((Variables, SPointer), (Operation, AExpressionL, AExpressionR), CompiledAExpression) :-
     member((Operation, Commands),    [
                                         (plus,  [add]),
                                         (minus, [sub]),
                                         (times, [mul]),
                                         (div,   [div]),
-                                        (mod,   [div, swapd, const(-16), shift])
+                                        (mod,   [div, const(16), swapd, const(0), sub, shift])
                                     ]),
     !,
-    compile_arithmetic_expression(SPointer, Variables, AExpressionL, CompiledAExpressionL),
+    compile_arithmetic_expression((Variables, SPointer), AExpressionL, CompiledAExpressionL),
     SPointer2 is SPointer - 1,
-    compile_arithmetic_expression(SPointer2, Variables, AExpressionR, CompiledAExpressionR),
+    compile_arithmetic_expression((Variables, SPointer2), AExpressionR, CompiledAExpressionR),
     append([CompiledAExpressionL, [swapd, const(SPointer), swapa, swapd, store], CompiledAExpressionR, [swapd, const(SPointer), swapa, load], Commands], CompiledAExpression).
+
+compile_arithmetic_expression(Environment, (minus, AExpression), CompiledAExpression) :-
+    !,
+    compile_arithmetic_expression(Environment, AExpression, CAExpression),
+    append(CAExpression, [swapd, const(0), sub], CompiledAExpression).
+
+compile_bool_expression.
 
 
 /* ========================== */
@@ -273,8 +293,12 @@ compile_arithmetic_expression(SPointer, Variables, (Operation, AExpressionL, AEx
 macro_assembler(MacroAssembler) -->
     [const(Constant)],  !, { append([const, Constant], RMacroAssembler, MacroAssembler) }, macro_assembler(RMacroAssembler)         |
     [syscall(Code)],    !, { append([const, Code, syscall], RMacroAssembler, MacroAssembler) }, macro_assembler(RMacroAssembler)    |
+    [store(Register)],  !, { member((Register, Adress), [(r1, 65535), (r2, 65534), (r3, 65533), (sp, 65532)]), append([swapd, const, Adress, swapa, swapd, store], RMacroAssembler, MacroAssembler) }, macro_assembler(RMacroAssembler) |
+    [load(Register)],   !, { member((Register, Adress), [(r1, 65535), (r2, 65534), (r3, 65533), (sp, 65532)]), append([const, Adress, swapa, load], RMacroAssembler, MacroAssembler) }, macro_assembler(RMacroAssembler) |
+    [push],             !, { append([swapd, const, 65532, swapa, load, swapd, swapa, const, 1, swapd, sub, swapa, store, swapd, const, 65532, swapa, store], RMacroAssembler, MacroAssembler) }, macro_assembler(RMacroAssembler) |
+    [pop],              !, { append([const, 65532, swapa, load, swapa, load, swapa, swapd, const, 1, add, swapd, const, 65532, swapa, swapd, store, swapd], RMacroAssembler, MacroAssembler) }, macro_assembler(RMacroAssembler) |
     [Command],          !, { append([Command], RMacroAssembler, MacroAssembler) }, macro_assembler(RMacroAssembler)                 |
-    [],                 !, { MacroAssembler = [const, 0, syscall] }.
+    [],                 !, { MacroAssembler = [] }.
 
 assembler(Assembler) -->
     [Command], !, {(
@@ -291,7 +315,8 @@ assembler(Assembler) -->
                                                 (add,       "ADD NOP NOP NOP "       ),
                                                 (sub,       "SUB NOP NOP NOP "       ),
                                                 (mul,       "MUL NOP NOP NOP "       ),
-                                                (div,       "DIV NOP NOP NOP "       )
+                                                (div,       "DIV NOP NOP NOP "       ),
+                                                (shift,     "SHIFT NOP NOP NOP "     )
                                             ]), !;
                     format(atom(Atom), '~`0t~16r~4| ', [Command]), atom_string(Atom, Symbol)
                   )},
@@ -317,7 +342,8 @@ algol16_file(File, SextiumBin) :-
 test(String, Assembler) :-
     string_to_list(String, L),
     phrase(lexer(T), L),
-    phrase(instruction_(I), T),
-    compile_instruction([], I, PMA),
-    phrase(macro_assembler(MA), PMA),
+    phrase(complex_instruction_(I), T),
+    compile_complex_instruction(([(a, 65535)], 65534), I, PMA),
+    append(PMA, [syscall(0)], PMA2),
+    phrase(macro_assembler(MA), PMA2),
     phrase(assembler(Assembler), MA).
