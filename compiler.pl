@@ -117,6 +117,7 @@ declarations_(Declarations) -->
     [],                             !, { Declarations = [] }.
 
 declaration_(Declaration) -->
+    !,
     declarator_(Declaration).
 
 declarator_(Variables) -->
@@ -149,6 +150,7 @@ instruction_(Instruction) -->
 
 
 arithmetic_expression_(AExpression) -->
+    !,
     summand_(Summand), arithmetic_expression_(Summand, AExpression).
 
 arithmetic_expression_(Acc, AExpression) -->
@@ -160,6 +162,7 @@ additive_operator_(Operator) -->
     [tokMinus],     !, { Operator = minus   }.
 
 summand_(SExpression) -->
+    !,
     factor_(Factor), summand_(Factor, SExpression).
 
 summand_(Acc, SExpression) -->
@@ -203,7 +206,7 @@ condition_(Condition) -->
                 !, relative_expression_(RExpression), { Condition = RExpression }.
 
 relative_expression_(RExpression) -->
-    [tokLParen], !, bool_expression_(RExpression), [tokRParen] |
+    [tokLParen], bool_expression_(RExpression), !, [tokRParen] |
     arithmetic_expression_(AExpressionL), relative_operator_(ROperator), arithmetic_expression_(AExpressionR), { RExpression = (ROperator, AExpressionL, AExpressionR) }.
 
 relative_operator_(Operator) -->
@@ -290,7 +293,7 @@ compile_arithmetic_expression((Variables, SPointer), (Operation, AExpressionL, A
                                         (minus, [sub]),
                                         (times, [mul]),
                                         (div,   [div]),
-                                        (mod,   [div, const(16), swapd, const(0), sub, shift])
+                                        (mod,   [div, const((hex, "FFF0 ")), swapd, shift])
                                     ]),
     !,
     compile_arithmetic_expression((Variables, SPointer), AExpressionL, CompiledAExpressionL),
@@ -371,21 +374,29 @@ assembler(Assembler) -->
                                                 (div,       "DIV NOP NOP NOP "       ),
                                                 (shift,     "SHIFT NOP NOP NOP "     )
                                             ]), !;
+                    Command = (hex, Symbol), !;
                     format(atom(Atom), '~`0t~16r~4| ', [Command]), atom_string(Atom, Symbol)
                   )},
     assembler(RAssembler), { string_concat(Symbol, RAssembler, Assembler) } |
-    [], { Assembler = "" }.
+    [],     !, { Assembler = "" }.
 
 /* ========================== */
 
 algol16(Source, SextiumBin) :-
+    print("Lexer"), nl,
     phrase(lexer(TokList), Source),
+    print("Parser"), nl,
+    print(TokList), nl,
     phrase(program_(Absynt), TokList),
+    print("Compile"), nl,
+    print(Absynt), nl,
     compile_program(Absynt, CompiledProgram),
-    append(CompiledProgram, [syscall(0), MacroAssembler]),
+    append(CompiledProgram, [syscall(0)], MacroAssembler),
+    print("MacroAssembler"), nl,
     phrase(macro_assembler(Assembler, 0), MacroAssembler),
-    phrase(assembler(SextiumBin), Assembler).
-
+    print("Assembler"), nl,
+    phrase(assembler(SextiumBin), Assembler),
+    print("OK"), nl.
 /* ========================== */
 
 algol16_file(File, SextiumBin) :-
