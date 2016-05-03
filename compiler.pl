@@ -113,7 +113,7 @@ block_(Block) -->
     declarations_(Declarations), [tokBegin], complex_instruction_(CInstruction), [tokEnd], { Block = block(Declarations, CInstruction) }.
 
 declarations_(Declarations) -->
-    declaration_(Declaration),      !, { append(Declaration, RDeclarations, Declarations) }, declarations(RDeclarations) |
+    declaration_(Declaration),      !, { append(Declaration, RDeclarations, Declarations) }, declarations_(RDeclarations) |
     [],                             !, { Declarations = [] }.
 
 declaration_(Declaration) -->
@@ -144,8 +144,8 @@ instruction_(Instruction) -->
                                                                                 [tokFi], { Instruction = if(Bool, ThenPart) }
                                                                                                                 ) |
     [tokWhile],                         !, bool_expression_(Bool), [tokDo], complex_instruction_(Body), [tokDone], { Instruction = while(Bool, Body) } |
-    [tokRead],                          !, variable_(Variable), { Instruction = read_(Variable) } |
-    [tokWrite],                         !, arithmetic_expression_(AExpression), { Instruction = write_(AExpression) }.
+    [tokRead],                          !, variable_(Variable), { Instruction = read(Variable) } |
+    [tokWrite],                         !, arithmetic_expression_(AExpression), { Instruction = write(AExpression) }.
 
 
 arithmetic_expression_(AExpression) -->
@@ -232,7 +232,6 @@ compile_declarations([variable(VName) | Declarations], (Variables, SPointer)) :-
 
 compile_declarations([], ([], 65535)).
 
-
 compile_complex_instruction(Environment, realise(Instruction, RCInstructions), CompiledCInstruction) :-
     !,
     compile_instruction(Environment, Instruction, CompiledInstruction),
@@ -241,12 +240,12 @@ compile_complex_instruction(Environment, realise(Instruction, RCInstructions), C
 compile_complex_instruction(Environment, realise(Instruction), CompiledCInstruction) :-
     compile_instruction(Environment, Instruction, CompiledCInstruction).
 
-compile_instruction((Variables, _), read_(variable(VName)), CompiledInstruction) :-
+compile_instruction((Variables, _), read(variable(VName)), CompiledInstruction) :-
     !,
     member((VName, VAdress), Variables),
     CompiledInstruction = [const(VAdress), swapa, syscall(1), store].
 
-compile_instruction(Environment, write_(AExpression), CompiledInstruction) :-
+compile_instruction(Environment, write(AExpression), CompiledInstruction) :-
     !,
     compile_arithmetic_expression(Environment, AExpression, CompiledAExpression),
     append(CompiledAExpression, [swapd, syscall(2)], CompiledInstruction).
@@ -256,6 +255,25 @@ compile_instruction((Variables, SPointer), assign(variable(VName), AExpression),
     compile_arithmetic_expression((Variables, SPointer), AExpression, CompiledAExpression),
     member((VName, VAdress), Variables),
     append(CompiledAExpression, [swapd, const, VAdress, swapa, swapd, store], CompiledInstruction).
+
+compile_instruction(Environment, if(Bool, ThenPart), CompiledInstruction) :-
+    !,
+    compile_bool_expression(Environment, Bool, CompiledBool),
+    compile_complex_instruction(Environment, ThenPart, CompiledCInstruction),
+    append([CompiledBool, [swapd, const(FI), swapa, swapd, branchz], CompiledCInstruction, [label(FI)]], CompiledInstruction).
+
+compile_instruction(Environment, if(Bool, ThenPart, ElsePart), CompiledInstruction) :-
+    !,
+    compile_bool_expression(Environment, Bool, CompiledBool),
+    compile_complex_instruction(Environment, ThenPart, CompiledThenPart),
+    compile_complex_instruction(Environment, ElsePart, CompiledElsePart),
+    append([CompiledBool, [swapd, const(ELSE), swapa, swapd, branchz], CompiledThenPart, [const(FI), jump, label(ELSE)], CompiledElsePart, [label(FI)]], CompiledInstruction).
+
+compile_instruction(Environment, while(Bool, Body), CompiledInstruction) :-
+    !,
+    compile_bool_expression(Environment, Bool, CompiledBool),
+    compile_complex_instruction(Environment, Body, CompiledBody),
+    append([[label(WHILE)], CompiledBool, [swapd, const(DONE), swapa, swapd, branchz], CompiledBody, [const(WHILE), jump, label(DONE)]], CompiledInstruction).
 
 compile_arithmetic_expression((Variables, _), variable(VName), CompiledAExpression) :-
     !,
@@ -285,19 +303,37 @@ compile_arithmetic_expression(Environment, (minus, AExpression), CompiledAExpres
     compile_arithmetic_expression(Environment, AExpression, CAExpression),
     append(CAExpression, [swapd, const(0), sub], CompiledAExpression).
 
-compile_bool_expression.
+
+
+compile_bool_expression((Variables, SPointer), (Operation, AExpressionL, AExpressionR), CompiledBoolExpression) :-
+    member((Operation, Commands),   [
+                                        (eq,    [sub, swapd, const(IF), swapa, swapd, branchz, const(0), swapd, const(FI), jump, label(IF), const(1), swapd, label(FI), swapd]),
+                                        (neq,   []),
+                                        (lt,    []),
+                                        (leq,   []),
+                                        (gt,    []),
+                                        (geq,   [])
+                                    ]),
+    !,
+    compile_arithmetic_expression((Variables, SPointer), AExpressionL, CompiledAExpressionL),
+    SPointer2 is SPointer - 1,
+    compile_arithmetic_expression((Variables, SPointer2), AExpressionR, CompiledAExpressionR),
+    append([CompiledAExpressionL, [swapd, const(SPointer), swapa, swapd, store], CompiledAExpressionR, [swapd, const(SPointer), swapa, load], Commands], CompiledBoolExpression).
 
 
 /* ========================== */
 
-macro_assembler(MacroAssembler) -->
-    [const(Constant)],  !, { append([const, Constant], RMacroAssembler, MacroAssembler) }, macro_assembler(RMacroAssembler)         |
-    [syscall(Code)],    !, { append([const, Code, syscall], RMacroAssembler, MacroAssembler) }, macro_assembler(RMacroAssembler)    |
+macro_assembler(MacroAssembler, N) -->
+    [const(Constant)],  !, { N2 is N + 2, append([const, Constant], RMacroAssembler, MacroAssembler) }, macro_assembler(RMacroAssembler, N2)         |
+    [syscall(Code)],    !, { N2 is N + 3, append([const, Code, syscall], RMacroAssembler, MacroAssembler) }, macro_assembler(RMacroAssembler, N2)    |
+    [label(Label)],     !, { Label = N }, macro_assembler(MacroAssembler, N) |
+    /*
     [store(Register)],  !, { member((Register, Adress), [(r1, 65535), (r2, 65534), (r3, 65533), (sp, 65532)]), append([swapd, const, Adress, swapa, swapd, store], RMacroAssembler, MacroAssembler) }, macro_assembler(RMacroAssembler) |
     [load(Register)],   !, { member((Register, Adress), [(r1, 65535), (r2, 65534), (r3, 65533), (sp, 65532)]), append([const, Adress, swapa, load], RMacroAssembler, MacroAssembler) }, macro_assembler(RMacroAssembler) |
     [push],             !, { append([swapd, const, 65532, swapa, load, swapd, swapa, const, 1, swapd, sub, swapa, store, swapd, const, 65532, swapa, store], RMacroAssembler, MacroAssembler) }, macro_assembler(RMacroAssembler) |
     [pop],              !, { append([const, 65532, swapa, load, swapa, load, swapa, swapd, const, 1, add, swapd, const, 65532, swapa, swapd, store, swapd], RMacroAssembler, MacroAssembler) }, macro_assembler(RMacroAssembler) |
-    [Command],          !, { append([Command], RMacroAssembler, MacroAssembler) }, macro_assembler(RMacroAssembler)                 |
+    */
+    [Command],          !, { N2 is N + 1, append([Command], RMacroAssembler, MacroAssembler) }, macro_assembler(RMacroAssembler, N2)                 |
     [],                 !, { MacroAssembler = [] }.
 
 assembler(Assembler) -->
@@ -342,8 +378,8 @@ algol16_file(File, SextiumBin) :-
 test(String, Assembler) :-
     string_to_list(String, L),
     phrase(lexer(T), L),
-    phrase(complex_instruction_(I), T),
-    compile_complex_instruction(([(a, 65535)], 65534), I, PMA),
+    phrase(program_(I), T),
+    compile_program(I, PMA),
     append(PMA, [syscall(0)], PMA2),
-    phrase(macro_assembler(MA), PMA2),
+    phrase(macro_assembler(MA, 0), PMA2),
     phrase(assembler(Assembler), MA).
