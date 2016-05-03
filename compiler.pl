@@ -382,7 +382,9 @@ algol16(Source, SextiumBin) :-
     phrase(lexer(TokList), Source),
     phrase(program_(Absynt), TokList),
     compile_program(Absynt, CompiledProgram),
-    SextiumBin = CompiledProgram.
+    append(CompiledProgram, [syscall(0), MacroAssembler]),
+    phrase(macro_assembler(Assembler, 0), MacroAssembler),
+    phrase(assembler(SextiumBin), Assembler).
 
 /* ========================== */
 
@@ -392,11 +394,6 @@ algol16_file(File, SextiumBin) :-
 
 /* ========================== */
 
-test(String, Assembler) :-
-    string_to_list(String, L),
-    phrase(lexer(T), L),
-    phrase(program_(I), T),
-    compile_program(I, PMA),
-    append(PMA, [syscall(0)], PMA2),
-    phrase(macro_assembler(MA, 0), PMA2),
-    phrase(assembler(Assembler), MA).
+algol16_string(String, SextiumBin) :-
+    string_to_list(String, Source),
+    algol16(Source, SextiumBin).
