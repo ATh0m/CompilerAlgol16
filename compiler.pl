@@ -304,21 +304,38 @@ compile_arithmetic_expression(Environment, (minus, AExpression), CompiledAExpres
     append(CAExpression, [swapd, const(0), sub], CompiledAExpression).
 
 
-
 compile_bool_expression((Variables, SPointer), (Operation, AExpressionL, AExpressionR), CompiledBoolExpression) :-
     member((Operation, Commands),   [
-                                        (eq,    [sub, swapd, const(IF), swapa, swapd, branchz, const(0), swapd, const(FI), jump, label(IF), const(1), swapd, label(FI), swapd]),
-                                        (neq,   []),
-                                        (lt,    []),
-                                        (leq,   []),
-                                        (gt,    []),
-                                        (geq,   [])
+                                        (eq,    [sub, swapd, const(L1), swapa, swapd, branchz, const(0), swapd, const(L2), jump, label(L1), const(1), swapd, label(L2), swapd]),
+                                        (neq,   [sub, swapd, const(L1), swapa, swapd, branchz, const(1), swapd, const(L2), jump, label(L1), const(0), swapd, label(L2), swapd]),
+                                        (lt,    [sub, swapd, const(L1), swapa, swapd, branchn, const(0), swapd, const(L2), jump, label(L1), const(1), swapd, label(L2), swapd]),
+                                        (leq,   [swapd, sub, swapd, const(L1), swapa, swapd, branchn, const(1), swapd, const(L2), jump, label(L1), const(0), swapd, label(L2), swapd]),
+                                        (gt,    [swapd, sub, swapd, const(L1), swapa, swapd, branchn, const(0), swapd, const(L2), jump, label(L1), const(1), swapd, label(L2), swapd]),
+                                        (geq,   [sub, swapd, const(L1), swapa, swapd, branchn, const(1), swapd, const(L2), jump, label(L1), const(0), swapd, label(L2), swapd])
                                     ]),
     !,
     compile_arithmetic_expression((Variables, SPointer), AExpressionL, CompiledAExpressionL),
     SPointer2 is SPointer - 1,
     compile_arithmetic_expression((Variables, SPointer2), AExpressionR, CompiledAExpressionR),
     append([CompiledAExpressionL, [swapd, const(SPointer), swapa, swapd, store], CompiledAExpressionR, [swapd, const(SPointer), swapa, load], Commands], CompiledBoolExpression).
+
+
+compile_bool_expression((Variables, SPointer), (Operation, BExpressionL, BExpressionR), CompiledBoolExpression) :-
+    member((Operation, Commands),   [
+                                        (or,    [add, swapd, const(L1), swapa, swapd, branchz, const(1), swapd, const(L2), jump, label(L1), const(0), swapd, label(L2), swapd]),
+                                        (and,   [add, swapd, const(2), sub, swapd, const(L1), swapa, swapd, branchz, const(0), swapd, const(L2), jump, label(L1), const(1), swapd, label(L2), swapd])
+                                    ]),
+    !,
+    compile_bool_expression((Variables, SPointer), BExpressionL, CompiledBExpressionL),
+    SPointer2 is SPointer - 1,
+    compile_bool_expression((Variables, SPointer2), BExpressionR, CompiledBExpressionR),
+    append([CompiledBExpressionL, [swapd, const(SPointer), swapa, swapd, store], CompiledBExpressionR, [swapd, const(SPointer), swapa, load], Commands], CompiledBoolExpression).
+
+
+compile_bool_expression(Environment, (not, BExpression), CompiledBoolExpression) :-
+    !,
+    compile_bool_expression(Environment, BExpression, CompiledBExpression),
+    append([CompiledBExpression, [swapd, const(L1), swapa, swapd, branchz, const(0), swapd, const(L2), jump, label(L1), const(1), swapd, label(L2), swapd]], CompiledBoolExpression).
 
 
 /* ========================== */
