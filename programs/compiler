@@ -1,0 +1,8 @@
+#!/bin/bash
+
+filename=${1%.*}
+
+../compiler/compiler $1 > $filename.sasm
+../Sextium_III/assemble $filename.sasm
+
+rm $filename.sasm

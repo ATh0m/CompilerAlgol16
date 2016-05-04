@@ -109,8 +109,12 @@ unknown(tokUnknown) -->
 program_(Ast) -->
     [tokProgram], [tokIdentifier(PName)], block_(Block), { Ast = program(PName, Block) }.
 
+/* ------ */
+
 block_(Block) -->
     declarations_(Declarations), [tokBegin], complex_instruction_(CInstruction), [tokEnd], { Block = block(Declarations, CInstruction) }.
+
+/* ------ */
 
 declarations_(Declarations) -->
     declaration_(Declaration),      !, { append(Declaration, RDeclarations, Declarations) }, declarations_(RDeclarations) |
@@ -383,20 +387,12 @@ assembler(Assembler) -->
 /* ========================== */
 
 algol16(Source, SextiumBin) :-
-    print("Lexer"), nl,
     phrase(lexer(TokList), Source),
-    print("Parser"), nl,
-    print(TokList), nl,
     phrase(program_(Absynt), TokList),
-    print("Compile"), nl,
-    print(Absynt), nl,
     compile_program(Absynt, CompiledProgram),
     append(CompiledProgram, [syscall(0)], MacroAssembler),
-    print("MacroAssembler"), nl,
     phrase(macro_assembler(Assembler, 0), MacroAssembler),
-    print("Assembler"), nl,
-    phrase(assembler(SextiumBin), Assembler),
-    print("OK"), nl.
+    phrase(assembler(SextiumBin), Assembler).
 /* ========================== */
 
 algol16_file(File, SextiumBin) :-
@@ -408,3 +404,10 @@ algol16_file(File, SextiumBin) :-
 algol16_string(String, SextiumBin) :-
     string_to_list(String, Source),
     algol16(Source, SextiumBin).
+
+main :-
+    current_prolog_flag(argv, Argv),
+    Argv = [_, File|_],
+    algol16_file(File, SextiumBin),
+    write(SextiumBin),
+    halt.
