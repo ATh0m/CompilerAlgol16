@@ -248,8 +248,8 @@ compile_complex_instruction(Environment, realise(Instruction), CompiledCInstruct
     compile_instruction(Environment, Instruction, CompiledCInstruction).
 
 compile_instruction((Variables, _), read(variable(VName)), CompiledInstruction) :-
+    member((VName, VAdress), Variables), 
     !,
-    member((VName, VAdress), Variables),
     CompiledInstruction = [const(VAdress), swapa, syscall(1), store].
 
 compile_instruction(Environment, write(AExpression), CompiledInstruction) :-
@@ -261,7 +261,8 @@ compile_instruction((Variables, SPointer), assign(variable(VName), AExpression),
     !,
     compile_arithmetic_expression((Variables, SPointer), AExpression, CompiledAExpression),
     member((VName, VAdress), Variables),
-    append(CompiledAExpression, [swapd, const, VAdress, swapa, swapd, store], CompiledInstruction).
+    !,
+    append(CompiledAExpression, [swapd, const(VAdress), swapa, swapd, store], CompiledInstruction).
 
 compile_instruction(Environment, if(Bool, ThenPart), CompiledInstruction) :-
     !,
@@ -283,8 +284,8 @@ compile_instruction(Environment, while(Bool, Body), CompiledInstruction) :-
     append([[label(WHILE)], CompiledBool, [swapd, const(DONE), swapa, swapd, branchz], CompiledBody, [const(WHILE), jump, label(DONE)]], CompiledInstruction).
 
 compile_arithmetic_expression((Variables, _), variable(VName), CompiledAExpression) :-
-    !,
     member((VName, VAdress), Variables),
+    !,
     CompiledAExpression = [const(VAdress), swapa, load].
 
 compile_arithmetic_expression(_, constant(Integer), CompiledAExpression) :-
@@ -347,36 +348,67 @@ compile_bool_expression(Environment, (not, BExpression), CompiledBoolExpression)
 
 /* ========================== */
 
-macro_assembler(MacroAssembler, N) -->
-    [const(Constant)],  !, { N2 is N + 2, append([const, Constant], RMacroAssembler, MacroAssembler) }, macro_assembler(RMacroAssembler, N2)         |
-    [syscall(Code)],    !, { N2 is N + 3, append([const, Code, syscall], RMacroAssembler, MacroAssembler) }, macro_assembler(RMacroAssembler, N2)    |
-    [label(Label)],     !, { Label = N }, macro_assembler(MacroAssembler, N) |
+macro_assembler(MacroAssembler) -->
+    [syscall(Code)],    !, { append([const(Code), syscall], RMacroAssembler, MacroAssembler) }, macro_assembler(RMacroAssembler)    |
+    [label(Label)],     !, { append([label(Label)], RMacroAssembler, MacroAssembler) }, macro_assembler(RMacroAssembler)     |
+    [const(Constant)],  !, { append([const(Constant)], RMacroAssembler, MacroAssembler) }, macro_assembler(RMacroAssembler)         |
+
     /*
-    [store(Register)],  !, { member((Register, Adress), [(r1, 65535), (r2, 65534), (r3, 65533), (sp, 65532)]), append([swapd, const, Adress, swapa, swapd, store], RMacroAssembler, MacroAssembler) }, macro_assembler(RMacroAssembler) |
-    [load(Register)],   !, { member((Register, Adress), [(r1, 65535), (r2, 65534), (r3, 65533), (sp, 65532)]), append([const, Adress, swapa, load], RMacroAssembler, MacroAssembler) }, macro_assembler(RMacroAssembler) |
-    [push],             !, { append([swapd, const, 65532, swapa, load, swapd, swapa, const, 1, swapd, sub, swapa, store, swapd, const, 65532, swapa, store], RMacroAssembler, MacroAssembler) }, macro_assembler(RMacroAssembler) |
-    [pop],              !, { append([const, 65532, swapa, load, swapa, load, swapa, swapd, const, 1, add, swapd, const, 65532, swapa, swapd, store, swapd], RMacroAssembler, MacroAssembler) }, macro_assembler(RMacroAssembler) |
+    [store(Register)],  !, { member((Register, Adress), [(r1, 65535), (r2, 65534), (r3, 65533), (sp, 65532)]), append([swapd, const(Adress), swapa, swapd, store], RMacroAssembler, MacroAssembler) }, macro_assembler(RMacroAssembler) |
+    [load(Register)],   !, { member((Register, Adress), [(r1, 65535), (r2, 65534), (r3, 65533), (sp, 65532)]), append([const(Adress), swapa, load], RMacroAssembler, MacroAssembler) }, macro_assembler(RMacroAssembler) |
+    [push],             !, { append([swapd, const(65532), swapa, load, swapd, swapa, const(1), swapd, sub, swapa, store, swapd, const(65532), swapa, store], RMacroAssembler, MacroAssembler) }, macro_assembler(RMacroAssembler) |
+    [pop],              !, { append([const(65532), swapa, load, swapa, load, swapa, swapd, const(1), add, swapd, const(65532), swapa, swapd, store, swapd], RMacroAssembler, MacroAssembler) }, macro_assembler(RMacroAssembler) |
     */
-    [Command],          !, { N2 is N + 1, append([Command], RMacroAssembler, MacroAssembler) }, macro_assembler(RMacroAssembler, N2)                 |
+
+    [Command],          !, { append([Command], RMacroAssembler, MacroAssembler) }, macro_assembler(RMacroAssembler)                 |
     [],                 !, { MacroAssembler = [] }.
+
+
+/* ------ */
+
+post_macro_assembler([], PostMacroAssembler, Acc, N) :-
+    \+ 0 is N mod 4, !, N2 is N + 1, append([nop], RPostMacroAssembler, PostMacroAssembler), post_macro_assembler([], RPostMacroAssembler, Acc, N2).
+
+post_macro_assembler([label(Label) | MacroAssembler], PostMacroAssembler, Acc, N) :-
+    \+ 0 is N mod 4, !, N2 is N + 1, append([nop], RPostMacroAssembler, PostMacroAssembler), post_macro_assembler([label(Label) | MacroAssembler], RPostMacroAssembler, Acc, N2).
+
+post_macro_assembler(MacroAssembler, PostMacroAssembler, Acc, N) :-
+    0 is N mod 4, \+ Acc = [], !, length(Acc, Length), N2 is N + 4 * Length, append(Acc, RPostMacroAssembler, PostMacroAssembler), post_macro_assembler(MacroAssembler, RPostMacroAssembler, [], N2).
+
+post_macro_assembler([Command | MacroAssembler], PostMacroAssembler, Acc, N) :-
+    member(Command, [ jump, branchz, branchn ]), \+ Acc = [], !, N2 is N + 1, append([nop], RPostMacroAssembler, PostMacroAssembler), post_macro_assembler([Command | MacroAssembler], RPostMacroAssembler, Acc, N2).
+
+post_macro_assembler([const(Constant) | MacroAssembler], PostMacroAssembler, Acc, N) :-
+    !, append(Acc, [Constant], Acc2), N2 is N + 1, append([const], RPostMacroAssembler, PostMacroAssembler), post_macro_assembler(MacroAssembler, RPostMacroAssembler, Acc2, N2).
+
+post_macro_assembler([label(Label) | MacroAssembler], PostMacroAssembler, Acc, N) :-
+    !, Label is N div 4, post_macro_assembler(MacroAssembler, PostMacroAssembler, Acc, N).
+
+post_macro_assembler([Command | MacroAssembler], PostMacroAssembler, Acc, N) :-
+    !, N2 is N + 1, append([Command], RPostMacroAssembler, PostMacroAssembler), post_macro_assembler(MacroAssembler, RPostMacroAssembler, Acc, N2).
+
+post_macro_assembler([], [], _, _).
+
+/* ------ */
 
 assembler(Assembler) -->
     [Command], !, {(
                     member((Command, Symbol),   [
-                                                (syscall,   "SYSCALL NOP NOP NOP "   ),
-                                                (load,      "LOAD NOP NOP NOP "      ),
-                                                (store,     "STORE NOP NOP NOP "     ),
-                                                (swapa,     "SWAPA NOP NOP NOP "     ),
-                                                (swapd,     "SWAPD NOP NOP NOP "     ),
-                                                (branchz,   "BRANCHZ NOP NOP NOP "   ),
-                                                (branchn,   "BRANCHN NOP NOP NOP "   ),
-                                                (jump,      "JUMP NOP NOP NOP "      ),
-                                                (const,     "CONST NOP NOP NOP "     ),
-                                                (add,       "ADD NOP NOP NOP "       ),
-                                                (sub,       "SUB NOP NOP NOP "       ),
-                                                (mul,       "MUL NOP NOP NOP "       ),
-                                                (div,       "DIV NOP NOP NOP "       ),
-                                                (shift,     "SHIFT NOP NOP NOP "     )
+                                                (syscall,   "SYSCALL "   ),
+                                                (load,      "LOAD "      ),
+                                                (store,     "STORE "     ),
+                                                (swapa,     "SWAPA "     ),
+                                                (swapd,     "SWAPD "     ),
+                                                (branchz,   "BRANCHZ "   ),
+                                                (branchn,   "BRANCHN "   ),
+                                                (jump,      "JUMP "      ),
+                                                (const,     "CONST "     ),
+                                                (add,       "ADD "       ),
+                                                (sub,       "SUB "       ),
+                                                (mul,       "MUL "       ),
+                                                (div,       "DIV "       ),
+                                                (shift,     "SHIFT "     ),
+                                                (nop,       "NOP "       )
                                             ]), !;
                     Command = (hex, Symbol), !;
                     format(atom(Atom), '~`0t~16r~4| ', [Command]), atom_string(Atom, Symbol)
@@ -391,7 +423,8 @@ algol16(Source, SextiumBin) :-
     phrase(program_(Absynt), TokList),
     compile_program(Absynt, CompiledProgram),
     append(CompiledProgram, [syscall(0)], MacroAssembler),
-    phrase(macro_assembler(Assembler, 0), MacroAssembler),
+    phrase(macro_assembler(PostMacroAssembler), MacroAssembler),
+    post_macro_assembler(PostMacroAssembler, Assembler, [], 0),
     phrase(assembler(SextiumBin), Assembler).
 /* ========================== */
 
@@ -411,3 +444,4 @@ main :-
     algol16_file(File, SextiumBin),
     write(SextiumBin),
     halt.
+
