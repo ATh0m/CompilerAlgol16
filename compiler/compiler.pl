@@ -305,7 +305,7 @@ compile_procedure_arguments((Variables, Procedures, SPointer, Return), [PArgumen
     !,
     compile_arithmetic_expression((Variables, Procedures, SPointer, Return), PArgument, CompiledPArgument),
     SPointer2 is SPointer - 1,
-    compile_procedure_arguments((Variables, Procedures, SPointer2, Return), PArguments, FArguments, (RVariables, RProcedures, RSPointer), RCPArguments),
+    compile_procedure_arguments((Variables, Procedures, SPointer2, Return), PArguments, FArguments, (RVariables, RProcedures, RSPointer, Return), RCPArguments),
     append([CompiledPArgument, [swapd, const(SPointer), swapa, swapd, store], RCPArguments], CompiledPArguments),
     NEnvironment = ([(VName, SPointer) | RVariables], RProcedures, RSPointer, Return).
 
