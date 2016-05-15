@@ -75,3 +75,11 @@ Session.vim
 *~
 # auto-generated tag files
 tags
+
+### Own ###
+*.alg16
+*.sasm
+*.sextium
+
+
+compiler/compiler
