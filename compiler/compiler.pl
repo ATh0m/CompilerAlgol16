@@ -392,39 +392,40 @@ post_macro_assembler([], [], _, _).
 
 /* ------ */
 
-assembler(Assembler, N) -->
-    { 0 is N mod 5, !, N2 is N + 1 }, assembler(RAssembler, N2), { string_concat(" ", RAssembler, Assembler) }.
+assembler(Assembler) -->
+    [Command1, Command2, Command3, Command4],   { Commands =  [
+                                                                (nop,       0 ),
+                                                                (syscall,   1 ),
+                                                                (load,      2 ),
+                                                                (store,     3 ),
+                                                                (swapa,     4 ),
+                                                                (swapd,     5 ),
+                                                                (branchz,   6 ),
+                                                                (branchn,   7 ),
+                                                                (jump,      8 ),
+                                                                (const,     9 ),
+                                                                (add,       10 ),
+                                                                (sub,       11 ),
+                                                                (mul,       12 ),
+                                                                (div,       13 ),
+                                                                (shift,     14 ),
+                                                                (nand,      15 )
+                                                              ],
+                                                  member((Command1, C1), Commands), !,
+                                                  member((Command2, C2), Commands),
+                                                  member((Command3, C3), Commands),
+                                                  member((Command4, C4), Commands),
+                                                  C is 16**3 * C1 + 16**2 * C2 + 16**1 * C3 + 16**0 * C4,
+                                                  Assembler = [C | RAssembler]
+                                                }, assembler(RAssembler)    |
+    [Number], !, { convert_number(Number, CNumber), Assembler = [CNumber | RAssembler] }, assembler(RAssembler) |
+    [], !, { Assembler = [] }.
 
-assembler(Assembler, N) -->
-    [Command], !, {(
-                    member((Command, Symbol),   [
-                                                (nop,       "0" ),
-                                                (syscall,   "1" ),
-                                                (load,      "2" ),
-                                                (store,     "3" ),
-                                                (swapa,     "4" ),
-                                                (swapd,     "5" ),
-                                                (branchz,   "6" ),
-                                                (branchn,   "7" ),
-                                                (jump,      "8" ),
-                                                (const,     "9" ),
-                                                (add,       "a" ),
-                                                (sub,       "b" ),
-                                                (mul,       "c" ),
-                                                (div,       "d" ),
-                                                (shift,     "e" )
-                                            ]), !, N2 is N + 1;
-                    dec_to_hex(Command, Symbol), N2 is N + 4
-                  )},
-    assembler(RAssembler, N2), { string_concat(Symbol, RAssembler, Assembler) } |
-    [],     !, { Assembler = "" }.
 
+convert_number(Number, CNumber) :-
+    Number < 0, !, CNumber is 65536 + Number.
 
-dec_to_hex(Dec, Hex) :-
-    Dec < 0, !, NDec is 65536 + Dec, dec_to_hex(NDec, Hex).
-
-dec_to_hex(Dec, Hex) :-
-    format(atom(Atom), '~`0t~16r~4|', [Dec]), atom_string(Atom, Hex).
+convert_number(Number, Number).
 
 /* ========================== */
 
@@ -435,7 +436,8 @@ algol16(Source, SextiumBin) :-
     append(CompiledProgram, [syscall(0)], MacroAssembler),
     phrase(macro_assembler(PostMacroAssembler), MacroAssembler),
     post_macro_assembler(PostMacroAssembler, Assembler, [], 0),
-    phrase(assembler(SextiumBin, 1), Assembler).
+    phrase(assembler(SextiumBin), Assembler).
+
 /* ========================== */
 
 algol16_file(File, SextiumBin) :-
@@ -452,6 +454,11 @@ main :-
     current_prolog_flag(argv, Argv),
     Argv = [_, File|_],
     algol16_file(File, SextiumBin),
-    write(SextiumBin),
+    write_list(SextiumBin),
     halt.
+
+
+write_list([]) :- !.
+write_list([H|T]) :-
+    format(atom(Atom), '~`0t~16R~4| ', H), write(Atom), write_list(T).
 
