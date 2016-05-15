@@ -133,8 +133,8 @@ declarations_(Declarations) -->
     [],                             !, { Declarations = [] }.
 
 declaration_(Declaration) -->
-    !,
-    declarator_(Declaration).
+    declarator_(Declaration),   ! |
+    procedure_(Declaration),    ! .
 
 declarator_(Variables) -->
     [tokLocal], variables_(Variables).
@@ -147,6 +147,23 @@ variables_(Variables) -->
 
 variable_(variable(VName)) -->
     [tokIdentifier(VName)].
+
+procedure_(Procedure) -->
+    [tokProcedure], !, [tokIdentifier(PName)], [tokLParen], formal_arguments_(FArguments), [tokRParen], block_(Block), { Procedure = [procedure(PName, FArguments, Block)] }.
+
+formal_arguments_(FArguments) -->
+    formal_arguments_sequence_(FArgumentsSequence),     !, { FArguments = FArgumentsSequence } |
+    [],                                                 !, { FArguments = [] }.
+
+formal_arguments_sequence_(FArgumentsSequence) -->
+    formal_argument_(FArgument), (
+                                    [tokComma], !, { FArgumentsSequence = [FArgument | RFArgumentsSequence] }, formal_arguments_sequence_(RFArgumentsSequence) ;
+                                                !, { FArgumentsSequence = [FArgument] }
+                                ).
+
+formal_argument_(FArgument) -->
+    [tokValue], !, variable_(Variable), { FArgument = value(Variable) } |
+                !, variable_(Variable), { FArgument = Variable } .
 
 complex_instruction_(CInstruction) -->
     instruction_(Instruction), (
@@ -161,6 +178,8 @@ instruction_(Instruction) -->
                                                                                 [tokFi], { Instruction = if(Bool, ThenPart) }
                                                                                                                 ) |
     [tokWhile],                         !, bool_expression_(Bool), [tokDo], complex_instruction_(Body), [tokDone], { Instruction = while(Bool, Body) } |
+    [tokCall],                          !, procedure_call_(Procedure), { Instruction = call(Procedure) } |
+    [tokReturn],                        !, arithmetic_expression_(AExpression), { Instruction = return(AExpression) } |
     [tokRead],                          !, variable_(Variable), { Instruction = read(Variable) } |
     [tokWrite],                         !, arithmetic_expression_(AExpression), { Instruction = write(AExpression) }.
 
@@ -199,9 +218,25 @@ simple_expression_(SExpression) -->
                     !, atomic_expression_(SExpression).
 
 atomic_expression_(AExpression) -->
-    variable_(AExpression),     ! |
-    [tokInteger(Integer)],      !, { AExpression = constant(Integer) }.
+    procedure_call_(Procedure),     !, { AExpression = Procedure } |
+    variable_(AExpression),         ! |
+    [tokInteger(Integer)],          !, { AExpression = constant(Integer) }.
 
+procedure_call_(Procedure) -->
+    [tokIdentifier(PName)], [tokLParen], factual_arguments_(PArguments), [tokRParen], { Procedure = procedure(PName, PArguments) }.
+
+factual_arguments_(FArguments) -->
+    factual_arguments_sequence_(FArgumentsSequence),    !, { FArguments = FArgumentsSequence } |
+    [],                                                 !, { FArguments = [] }.
+
+factual_arguments_sequence_(FArgumentsSequence) -->
+    factual_argument_(FArgument),   (
+                                        [tokComma], !, { FArgumentsSequence = [FArgument | RFArgumentsSequence] }, factual_arguments_sequence_(RFArgumentsSequence) ;
+                                                    !, { FArgumentsSequence = [FArgument] }
+                                    ).
+
+factual_argument_(FArgument) -->
+    arithmetic_expression_(AExpression), { FArgument = AExpression } .
 
 bool_expression_(Bool) -->
     conjunction_(Conjunction), bool_expression_(Conjunction, Bool).
@@ -237,19 +272,44 @@ relative_operator_(Operator) -->
 /* ========================== */
 
 compile_program(program(_, Block), CompiledProgram) :-
-    compile_block(Block, CompiledProgram).
+    compile_block(([], [], 65535, Return), Block, CompiledBlock),
+    append(CompiledBlock, [label(Return), syscall(0)], CompiledProgram).
 
-compile_block(block(Declarations, CInstruction), CompiledBlock) :-
-    compile_declarations(Declarations, Environment),
-    compile_complex_instruction(Environment, CInstruction, CompiledBlock).
+compile_block(Environment, block(Declarations, CInstruction), CompiledBlock) :-
+    compile_declarations(Environment, Declarations, NEnvironment),
+    compile_complex_instruction(NEnvironment, CInstruction, CompiledBlock).
 
-compile_declarations([variable(VName) | Declarations], (Variables, SPointer)) :-
+compile_declarations(Environment, [variable(VName) | Declarations], (Variables, Procedures, SPointer, Return)) :-
     !,
-    compile_declarations(Declarations, (RVariables, RSPointer)),
+    compile_declarations(Environment, Declarations, (RVariables, Procedures, RSPointer, Return)),
     Variables = [(VName, RSPointer) | RVariables],
     SPointer is RSPointer - 1.
 
-compile_declarations([], ([], 65535)).
+compile_declarations(Environment, [procedure(PName, FArguments, Block) | Declarations], (Variables, Procedures, SPointer, Return)) :-
+    !,
+    compile_declarations(Environment, Declarations, (Variables, RProcedures, SPointer, Return)),
+    Procedures = [(PName, FArguments, Block) | RProcedures].
+
+compile_declarations(Environment, [], Environment).
+
+
+compile_procedure((Variables, Procedures, SPointer, Return), procedure(PName, PArguments), CompiledProcedure) :-
+    member((PName, FArguments, Block), Procedures),
+    length(PArguments, L), length(FArguments, L),
+    !,
+    compile_procedure_arguments((Variables, Procedures, SPointer, Return), PArguments, FArguments, (NVariables, NProcedures, NSPointer, _), CompiledPArguments),
+    compile_block((NVariables, NProcedures, NSPointer, NReturn), Block, CompiledBlock),
+    append([CompiledPArguments, CompiledBlock, [const(0), swapd, label(NReturn), swapd]], CompiledProcedure).
+
+compile_procedure_arguments((Variables, Procedures, SPointer, Return), [PArgument | PArguments], [value(variable(VName)) | FArguments], NEnvironment, CompiledPArguments) :-
+    !,
+    compile_arithmetic_expression((Variables, Procedures, SPointer, Return), PArgument, CompiledPArgument),
+    SPointer2 is SPointer - 1,
+    compile_procedure_arguments((Variables, Procedures, SPointer2, Return), PArguments, FArguments, (RVariables, RProcedures, RSPointer), RCPArguments),
+    append([CompiledPArgument, [swapd, const(SPointer), swapa, swapd, store], RCPArguments], CompiledPArguments),
+    NEnvironment = ([(VName, SPointer) | RVariables], RProcedures, RSPointer, Return).
+
+compile_procedure_arguments(Environment, [], [], Environment, []).
 
 compile_complex_instruction(Environment, realise(Instruction, RCInstructions), CompiledCInstruction) :-
     !,
@@ -259,7 +319,7 @@ compile_complex_instruction(Environment, realise(Instruction, RCInstructions), C
 compile_complex_instruction(Environment, realise(Instruction), CompiledCInstruction) :-
     compile_instruction(Environment, Instruction, CompiledCInstruction).
 
-compile_instruction((Variables, _), read(variable(VName)), CompiledInstruction) :-
+compile_instruction((Variables, _, _, _), read(variable(VName)), CompiledInstruction) :-
     member((VName, VAdress), Variables), 
     !,
     CompiledInstruction = [const(VAdress), swapa, syscall(1), store].
@@ -269,9 +329,19 @@ compile_instruction(Environment, write(AExpression), CompiledInstruction) :-
     compile_arithmetic_expression(Environment, AExpression, CompiledAExpression),
     append(CompiledAExpression, [swapd, syscall(2)], CompiledInstruction).
 
-compile_instruction((Variables, SPointer), assign(variable(VName), AExpression), CompiledInstruction) :-
+compile_instruction(Environment, call(Procedure), CompiledInstruction) :-
     !,
-    compile_arithmetic_expression((Variables, SPointer), AExpression, CompiledAExpression),
+    compile_procedure(Environment, Procedure, CompiledProcedure),
+    CompiledInstruction = CompiledProcedure.
+
+compile_instruction((Variables, Procedures, SPointer, Return), return(AExpression), CompiledInstruction) :-
+    !,
+    compile_arithmetic_expression((Variables, Procedures, SPointer, Return), AExpression, CompiledAExpression),
+    append(CompiledAExpression, [swapd, const(Return), jump], CompiledInstruction).
+
+compile_instruction((Variables, Procedures, SPointer, Return), assign(variable(VName), AExpression), CompiledInstruction) :-
+    !,
+    compile_arithmetic_expression((Variables, Procedures, SPointer, Return), AExpression, CompiledAExpression),
     member((VName, VAdress), Variables),
     !,
     append(CompiledAExpression, [swapd, const(VAdress), swapa, swapd, store], CompiledInstruction).
@@ -295,7 +365,7 @@ compile_instruction(Environment, while(Bool, Body), CompiledInstruction) :-
     compile_complex_instruction(Environment, Body, CompiledBody),
     append([[label(WHILE)], CompiledBool, [swapd, const(DONE), swapa, swapd, branchz], CompiledBody, [const(WHILE), jump, label(DONE)]], CompiledInstruction).
 
-compile_arithmetic_expression((Variables, _), variable(VName), CompiledAExpression) :-
+compile_arithmetic_expression((Variables, _, _, _), variable(VName), CompiledAExpression) :-
     member((VName, VAdress), Variables),
     !,
     CompiledAExpression = [const(VAdress), swapa, load].
@@ -304,18 +374,23 @@ compile_arithmetic_expression(_, constant(Integer), CompiledAExpression) :-
     !,
     CompiledAExpression = [const(Integer)].
 
-compile_arithmetic_expression((Variables, SPointer), (Operation, AExpressionL, AExpressionR), CompiledAExpression) :-
+compile_arithmetic_expression(Environment, procedure(PName, PArguments), CompiledAExpression) :-
+    !,
+    compile_procedure(Environment, procedure(PName, PArguments), CompiledProcedure),
+    CompiledAExpression = CompiledProcedure.
+
+compile_arithmetic_expression((Variables, Procedures, SPointer, Return), (Operation, AExpressionL, AExpressionR), CompiledAExpression) :-
     member((Operation, Commands),    [
                                         (plus,  [add]),
                                         (minus, [sub]),
                                         (times, [mul]),
                                         (div,   [div]),
-                                            (mod,   [div, const(-16), swapd, shift])
+                                        (mod,   [div, const(-16), swapd, shift])
                                     ]),
     !,
-    compile_arithmetic_expression((Variables, SPointer), AExpressionL, CompiledAExpressionL),
+    compile_arithmetic_expression((Variables, Procedures, SPointer, Return), AExpressionL, CompiledAExpressionL),
     SPointer2 is SPointer - 1,
-    compile_arithmetic_expression((Variables, SPointer2), AExpressionR, CompiledAExpressionR),
+    compile_arithmetic_expression((Variables, Procedures, SPointer2, Return), AExpressionR, CompiledAExpressionR),
     append([CompiledAExpressionL, [swapd, const(SPointer), swapa, swapd, store], CompiledAExpressionR, [swapd, const(SPointer), swapa, load], Commands], CompiledAExpression).
 
 compile_arithmetic_expression(Environment, (minus, AExpression), CompiledAExpression) :-
@@ -324,7 +399,7 @@ compile_arithmetic_expression(Environment, (minus, AExpression), CompiledAExpres
     append(CAExpression, [swapd, const(0), sub], CompiledAExpression).
 
 
-compile_bool_expression((Variables, SPointer), (Operation, AExpressionL, AExpressionR), CompiledBoolExpression) :-
+compile_bool_expression((Variables, Procedures, SPointer, Return), (Operation, AExpressionL, AExpressionR), CompiledBoolExpression) :-
     member((Operation, Commands),   [
                                         (eq,    [test(L0, L0), sub, swapd, const(L1), swapa, swapd, branchz, label(L0), const(0), swapd, const(L2), jump, label(L1), const(1), swapd, label(L2), swapd]),
                                         (neq,   [test(L0, L0), sub, swapd, const(L1), swapa, swapd, branchz, label(L0), const(1), swapd, const(L2), jump, label(L1), const(0), swapd, label(L2), swapd]),
@@ -334,21 +409,21 @@ compile_bool_expression((Variables, SPointer), (Operation, AExpressionL, AExpres
                                         (geq,   [test(L1, L0), sub, swapd, const(L1), swapa, swapd, branchn, label(L0), const(1), swapd, const(L2), jump, label(L1), const(0), swapd, label(L2), swapd])
                                     ]),
     !,
-    compile_arithmetic_expression((Variables, SPointer), AExpressionL, CompiledAExpressionL),
+    compile_arithmetic_expression((Variables, Procedures, SPointer, Return), AExpressionL, CompiledAExpressionL),
     SPointer2 is SPointer - 1,
-    compile_arithmetic_expression((Variables, SPointer2), AExpressionR, CompiledAExpressionR),
+    compile_arithmetic_expression((Variables, Procedures, SPointer2, Return), AExpressionR, CompiledAExpressionR),
     append([CompiledAExpressionL, [swapd, const(SPointer), swapa, swapd, store], CompiledAExpressionR, [swapd, const(SPointer), swapa, load], Commands], CompiledBoolExpression).
 
 
-compile_bool_expression((Variables, SPointer), (Operation, BExpressionL, BExpressionR), CompiledBoolExpression) :-
+compile_bool_expression((Variables, Procedures, SPointer, Return), (Operation, BExpressionL, BExpressionR), CompiledBoolExpression) :-
     member((Operation, Commands),   [
                                         (or,    [add, swapd, const(L1), swapa, swapd, branchz, const(1), swapd, const(L2), jump, label(L1), const(0), swapd, label(L2), swapd]),
                                         (and,   [add, swapd, const(2), sub, swapd, const(L1), swapa, swapd, branchz, const(0), swapd, const(L2), jump, label(L1), const(1), swapd, label(L2), swapd])
                                     ]),
     !,
-    compile_bool_expression((Variables, SPointer), BExpressionL, CompiledBExpressionL),
+    compile_bool_expression((Variables, Procedures, SPointer, Return), BExpressionL, CompiledBExpressionL),
     SPointer2 is SPointer - 1,
-    compile_bool_expression((Variables, SPointer2), BExpressionR, CompiledBExpressionR),
+    compile_bool_expression((Variables, Procedures, SPointer2, Return), BExpressionR, CompiledBExpressionR),
     append([CompiledBExpressionL, [swapd, const(SPointer), swapa, swapd, store], CompiledBExpressionR, [swapd, const(SPointer), swapa, load], Commands], CompiledBoolExpression).
 
 
@@ -388,8 +463,10 @@ post_macro_assembler([label(Label) | MacroAssembler], PostMacroAssembler, Acc, N
 post_macro_assembler(MacroAssembler, PostMacroAssembler, Acc, N) :-
     0 is N mod 4, \+ Acc = [], !, length(Acc, Length), N2 is N + 4 * Length, append(Acc, RPostMacroAssembler, PostMacroAssembler), post_macro_assembler(MacroAssembler, RPostMacroAssembler, [], N2).
 
+/*
 post_macro_assembler([Command | MacroAssembler], PostMacroAssembler, Acc, N) :-
     member(Command, [ jump, branchz, branchn ]), \+ Acc = [], !, N2 is N + 1, append([nop], RPostMacroAssembler, PostMacroAssembler), post_macro_assembler([Command | MacroAssembler], RPostMacroAssembler, Acc, N2).
+*/
 
 post_macro_assembler([const(Constant) | MacroAssembler], PostMacroAssembler, Acc, N) :-
     !, append(Acc, [Constant], Acc2), N2 is N + 1, append([const], RPostMacroAssembler, PostMacroAssembler), post_macro_assembler(MacroAssembler, RPostMacroAssembler, Acc2, N2).
@@ -405,7 +482,7 @@ post_macro_assembler([], [], _, _).
 /* ------ */
 
 assembler(Assembler) -->
-    [Command1, Command2, Command3, Command4],   { Commands =  [
+    [Command1], [Command2], [Command3], [Command4],   { Commands =  [
                                                                 (nop,       0 ),
                                                                 (syscall,   1 ),
                                                                 (load,      2 ),
@@ -424,9 +501,9 @@ assembler(Assembler) -->
                                                                 (nand,      15 )
                                                               ],
                                                   member((Command1, C1), Commands), !,
-                                                  member((Command2, C2), Commands),
-                                                  member((Command3, C3), Commands),
-                                                  member((Command4, C4), Commands),
+                                                  member((Command2, C2), Commands), !,
+                                                  member((Command3, C3), Commands), !,
+                                                  member((Command4, C4), Commands), !,
                                                   C is 16**3 * C1 + 16**2 * C2 + 16**1 * C3 + 16**0 * C4,
                                                   Assembler = [C | RAssembler]
                                                 }, assembler(RAssembler)    |
@@ -444,8 +521,7 @@ convert_number(Number, Number).
 algol16(Source, SextiumBin) :-
     phrase(lexer(TokList), Source),
     phrase(program_(Absynt), TokList),
-    compile_program(Absynt, CompiledProgram),
-    append(CompiledProgram, [syscall(0)], MacroAssembler),
+    compile_program(Absynt, MacroAssembler),
     phrase(macro_assembler(PostMacroAssembler), MacroAssembler),
     post_macro_assembler(PostMacroAssembler, Assembler, [], 0),
     phrase(assembler(SextiumBin), Assembler).
