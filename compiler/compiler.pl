@@ -1,3 +1,15 @@
+/*
+* Tomasz Nanowski
+* Metody Programowania, Pracownia nr 3
+*
+* SWI-Prolog version 7.2.3
+*
+* Zaimplementowana wersja:
+* - podstawowa wersja języka bez procedur
+*
+*/
+
+
 
 lexer(Tokens) -->
     white_space,        !, lexer(Tokens) |
@@ -343,7 +355,7 @@ compile_bool_expression((Variables, SPointer), (Operation, BExpressionL, BExpres
 compile_bool_expression(Environment, (not, BExpression), CompiledBoolExpression) :-
     !,
     compile_bool_expression(Environment, BExpression, CompiledBExpression),
-    append([CompiledBExpression, [swapd, const(L1), swapa, swapd, branchz, const(0), swapd, const(L2), jump, label(L1), const(1), swapd, label(L2), swapd]], CompiledBoolExpression).
+    append(CompiledBExpression, [swapd, const(1), sub], CompiledBoolExpression).
 
 
 /* ========================== */
