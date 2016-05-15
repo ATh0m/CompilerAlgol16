@@ -298,7 +298,7 @@ compile_arithmetic_expression((Variables, SPointer), (Operation, AExpressionL, A
                                         (minus, [sub]),
                                         (times, [mul]),
                                         (div,   [div]),
-                                        (mod,   [div, const((hex, "FFF0 ")), swapd, shift])
+                                            (mod,   [div, const(-16), swapd, shift])
                                     ]),
     !,
     compile_arithmetic_expression((Variables, SPointer), AExpressionL, CompiledAExpressionL),
@@ -392,30 +392,39 @@ post_macro_assembler([], [], _, _).
 
 /* ------ */
 
-assembler(Assembler) -->
+assembler(Assembler, N) -->
+    { 0 is N mod 5, !, N2 is N + 1 }, assembler(RAssembler, N2), { string_concat(" ", RAssembler, Assembler) }.
+
+assembler(Assembler, N) -->
     [Command], !, {(
                     member((Command, Symbol),   [
-                                                (syscall,   "SYSCALL "   ),
-                                                (load,      "LOAD "      ),
-                                                (store,     "STORE "     ),
-                                                (swapa,     "SWAPA "     ),
-                                                (swapd,     "SWAPD "     ),
-                                                (branchz,   "BRANCHZ "   ),
-                                                (branchn,   "BRANCHN "   ),
-                                                (jump,      "JUMP "      ),
-                                                (const,     "CONST "     ),
-                                                (add,       "ADD "       ),
-                                                (sub,       "SUB "       ),
-                                                (mul,       "MUL "       ),
-                                                (div,       "DIV "       ),
-                                                (shift,     "SHIFT "     ),
-                                                (nop,       "NOP "       )
-                                            ]), !;
-                    Command = (hex, Symbol), !;
-                    format(atom(Atom), '~`0t~16r~4| ', [Command]), atom_string(Atom, Symbol)
+                                                (nop,       "0" ),
+                                                (syscall,   "1" ),
+                                                (load,      "2" ),
+                                                (store,     "3" ),
+                                                (swapa,     "4" ),
+                                                (swapd,     "5" ),
+                                                (branchz,   "6" ),
+                                                (branchn,   "7" ),
+                                                (jump,      "8" ),
+                                                (const,     "9" ),
+                                                (add,       "a" ),
+                                                (sub,       "b" ),
+                                                (mul,       "c" ),
+                                                (div,       "d" ),
+                                                (shift,     "e" )
+                                            ]), !, N2 is N + 1;
+                    dec_to_hex(Command, Symbol), N2 is N + 4
                   )},
-    assembler(RAssembler), { string_concat(Symbol, RAssembler, Assembler) } |
+    assembler(RAssembler, N2), { string_concat(Symbol, RAssembler, Assembler) } |
     [],     !, { Assembler = "" }.
+
+
+dec_to_hex(Dec, Hex) :-
+    Dec < 0, !, NDec is 65536 + Dec, dec_to_hex(NDec, Hex).
+
+dec_to_hex(Dec, Hex) :-
+    format(atom(Atom), '~`0t~16r~4|', [Dec]), atom_string(Atom, Hex).
 
 /* ========================== */
 
@@ -426,7 +435,7 @@ algol16(Source, SextiumBin) :-
     append(CompiledProgram, [syscall(0)], MacroAssembler),
     phrase(macro_assembler(PostMacroAssembler), MacroAssembler),
     post_macro_assembler(PostMacroAssembler, Assembler, [], 0),
-    phrase(assembler(SextiumBin), Assembler).
+    phrase(assembler(SextiumBin, 1), Assembler).
 /* ========================== */
 
 algol16_file(File, SextiumBin) :-
