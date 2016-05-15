@@ -314,12 +314,12 @@ compile_arithmetic_expression(Environment, (minus, AExpression), CompiledAExpres
 
 compile_bool_expression((Variables, SPointer), (Operation, AExpressionL, AExpressionR), CompiledBoolExpression) :-
     member((Operation, Commands),   [
-                                        (eq,    [sub, swapd, const(L1), swapa, swapd, branchz, const(0), swapd, const(L2), jump, label(L1), const(1), swapd, label(L2), swapd]),
-                                        (neq,   [sub, swapd, const(L1), swapa, swapd, branchz, const(1), swapd, const(L2), jump, label(L1), const(0), swapd, label(L2), swapd]),
-                                        (lt,    [sub, swapd, const(L1), swapa, swapd, branchn, const(0), swapd, const(L2), jump, label(L1), const(1), swapd, label(L2), swapd]),
-                                        (leq,   [swapd, sub, swapd, const(L1), swapa, swapd, branchn, const(1), swapd, const(L2), jump, label(L1), const(0), swapd, label(L2), swapd]),
-                                        (gt,    [swapd, sub, swapd, const(L1), swapa, swapd, branchn, const(0), swapd, const(L2), jump, label(L1), const(1), swapd, label(L2), swapd]),
-                                        (geq,   [sub, swapd, const(L1), swapa, swapd, branchn, const(1), swapd, const(L2), jump, label(L1), const(0), swapd, label(L2), swapd])
+                                        (eq,    [test(L0, L0), sub, swapd, const(L1), swapa, swapd, branchz, label(L0), const(0), swapd, const(L2), jump, label(L1), const(1), swapd, label(L2), swapd]),
+                                        (neq,   [test(L0, L0), sub, swapd, const(L1), swapa, swapd, branchz, label(L0), const(1), swapd, const(L2), jump, label(L1), const(0), swapd, label(L2), swapd]),
+                                        (lt,    [test(L1, L0), sub, swapd, const(L1), swapa, swapd, branchn, label(L0), const(0), swapd, const(L2), jump, label(L1), const(1), swapd, label(L2), swapd]),
+                                        (leq,   [test(L0, L1), swapd, sub, swapd, const(L1), swapa, swapd, branchn, label(L0), const(1), swapd, const(L2), jump, label(L1), const(0), swapd, label(L2), swapd]),
+                                        (gt,    [test(L0, L1), swapd, sub, swapd, const(L1), swapa, swapd, branchn, label(L0), const(0), swapd, const(L2), jump, label(L1), const(1), swapd, label(L2), swapd]),
+                                        (geq,   [test(L1, L0), sub, swapd, const(L1), swapa, swapd, branchn, label(L0), const(1), swapd, const(L2), jump, label(L1), const(0), swapd, label(L2), swapd])
                                     ]),
     !,
     compile_arithmetic_expression((Variables, SPointer), AExpressionL, CompiledAExpressionL),
@@ -352,6 +352,7 @@ macro_assembler(MacroAssembler) -->
     [syscall(Code)],    !, { append([const(Code), syscall], RMacroAssembler, MacroAssembler) }, macro_assembler(RMacroAssembler)    |
     [label(Label)],     !, { append([label(Label)], RMacroAssembler, MacroAssembler) }, macro_assembler(RMacroAssembler)     |
     [const(Constant)],  !, { append([const(Constant)], RMacroAssembler, MacroAssembler) }, macro_assembler(RMacroAssembler)         |
+    [test(R1, R2)],     !, { append([swapa, const(T1), swapa, branchn, swapa, const(T2), jump, label(T1), swapd, swapa, const(E), swapa, branchn, const(R1), jump, label(T2), const(R2), swapa, swapd, branchn, label(E), swapd], RMacroAssembler, MacroAssembler) }, macro_assembler(RMacroAssembler)    |
 
     /*
     [store(Register)],  !, { member((Register, Adress), [(r1, 65535), (r2, 65534), (r3, 65533), (sp, 65532)]), append([swapd, const(Adress), swapa, swapd, store], RMacroAssembler, MacroAssembler) }, macro_assembler(RMacroAssembler) |
