@@ -4,12 +4,20 @@
 *
 * SWI-Prolog version 7.2.3
 *
-* Zaimplementowana wersja:
-* - podstawowa wersja języka bez procedur
+* Zaimplementowane elementy:
+* - podstawowa wersja języka
+* - nierekurencyjne procedury
+* - możliwość przekazywania parametrów przez wartość
+* - możliwość zagnieżdżania procedur
 *
 */
 
 
+/*
+*
+*   LEXER
+*
+*/
 
 lexer(Tokens) -->
     white_space,        !, lexer(Tokens) |
@@ -116,7 +124,13 @@ keyword(Id, Token) :-
 unknown(tokUnknown) -->
     [_].
 
-/* ========================== */
+
+
+/*
+*
+*   PARSER
+*
+*/
 
 program_(Ast) -->
     [tokProgram], [tokIdentifier(PName)], block_(Block), { Ast = program(PName, Block) }.
@@ -269,7 +283,11 @@ relative_operator_(Operator) -->
     [tokGeq],   !, { Operator = geq }.
 
 
-/* ========================== */
+/*
+*
+*   COMPILER
+*
+*/
 
 compile_program(program(_, Block), CompiledProgram) :-
     compile_block(([], [], 65535, Return), Block, CompiledBlock),
@@ -432,22 +450,17 @@ compile_bool_expression(Environment, (not, BExpression), CompiledBoolExpression)
     compile_bool_expression(Environment, BExpression, CompiledBExpression),
     append(CompiledBExpression, [swapd, const(1), sub], CompiledBoolExpression).
 
-
-/* ========================== */
+/*
+*
+*   ASSEMBLER
+*
+*/
 
 macro_assembler(MacroAssembler) -->
     [syscall(Code)],    !, { append([const(Code), syscall], RMacroAssembler, MacroAssembler) }, macro_assembler(RMacroAssembler)    |
     [label(Label)],     !, { append([label(Label)], RMacroAssembler, MacroAssembler) }, macro_assembler(RMacroAssembler)     |
     [const(Constant)],  !, { append([const(Constant)], RMacroAssembler, MacroAssembler) }, macro_assembler(RMacroAssembler)         |
     [test(R1, R2)],     !, { append([swapa, const(T1), swapa, branchn, swapa, const(T2), jump, label(T1), swapd, swapa, const(E), swapa, branchn, const(R1), jump, label(T2), const(R2), swapa, swapd, branchn, label(E), swapd], RMacroAssembler, MacroAssembler) }, macro_assembler(RMacroAssembler)    |
-
-    /*
-    [store(Register)],  !, { member((Register, Adress), [(r1, 65535), (r2, 65534), (r3, 65533), (sp, 65532)]), append([swapd, const(Adress), swapa, swapd, store], RMacroAssembler, MacroAssembler) }, macro_assembler(RMacroAssembler) |
-    [load(Register)],   !, { member((Register, Adress), [(r1, 65535), (r2, 65534), (r3, 65533), (sp, 65532)]), append([const(Adress), swapa, load], RMacroAssembler, MacroAssembler) }, macro_assembler(RMacroAssembler) |
-    [push],             !, { append([swapd, const(65532), swapa, load, swapd, swapa, const(1), swapd, sub, swapa, store, swapd, const(65532), swapa, store], RMacroAssembler, MacroAssembler) }, macro_assembler(RMacroAssembler) |
-    [pop],              !, { append([const(65532), swapa, load, swapa, load, swapa, swapd, const(1), add, swapd, const(65532), swapa, swapd, store, swapd], RMacroAssembler, MacroAssembler) }, macro_assembler(RMacroAssembler) |
-    */
-
     [Command],          !, { append([Command], RMacroAssembler, MacroAssembler) }, macro_assembler(RMacroAssembler)                 |
     [],                 !, { MacroAssembler = [] }.
 
@@ -462,11 +475,6 @@ post_macro_assembler([label(Label) | MacroAssembler], PostMacroAssembler, Acc, N
 
 post_macro_assembler(MacroAssembler, PostMacroAssembler, Acc, N) :-
     0 is N mod 4, \+ Acc = [], !, length(Acc, Length), N2 is N + 4 * Length, append(Acc, RPostMacroAssembler, PostMacroAssembler), post_macro_assembler(MacroAssembler, RPostMacroAssembler, [], N2).
-
-/*
-post_macro_assembler([Command | MacroAssembler], PostMacroAssembler, Acc, N) :-
-    member(Command, [ jump, branchz, branchn ]), \+ Acc = [], !, N2 is N + 1, append([nop], RPostMacroAssembler, PostMacroAssembler), post_macro_assembler([Command | MacroAssembler], RPostMacroAssembler, Acc, N2).
-*/
 
 post_macro_assembler([const(Constant) | MacroAssembler], PostMacroAssembler, Acc, N) :-
     !, append(Acc, [Constant], Acc2), N2 is N + 1, append([const], RPostMacroAssembler, PostMacroAssembler), post_macro_assembler(MacroAssembler, RPostMacroAssembler, Acc2, N2).
@@ -516,7 +524,13 @@ convert_number(Number, CNumber) :-
 
 convert_number(Number, Number).
 
-/* ========================== */
+
+
+/*
+*
+*   ALGOL16
+*
+*/
 
 algol16(Source, SextiumBin) :-
     phrase(lexer(TokList), Source),
@@ -526,13 +540,17 @@ algol16(Source, SextiumBin) :-
     post_macro_assembler(PostMacroAssembler, Assembler, [], 0),
     phrase(assembler(SextiumBin), Assembler).
 
-/* ========================== */
+
+
+/*
+*
+*   DEBUGGING
+*
+*/
 
 algol16_file(File, SextiumBin) :-
     read_file_to_codes(File, Source, []),
     algol16(Source, SextiumBin).
-
-/* ========================== */
 
 algol16_string(String, SextiumBin) :-
     string_to_list(String, Source),
